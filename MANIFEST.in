@@ -1,5 +1,2 @@
-graft dapp_lib
-graft tools
-graft util
-graft wallet
+graft nbcc
 global-exclude *.pyc
