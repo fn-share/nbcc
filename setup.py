@@ -24,7 +24,7 @@ if __name__ == '__main__':
       'Topic :: Software Development :: Debuggers',
       'Topic :: Software Development :: Libraries',
       'Topic :: Utilities' ],
-    packages=['dapp_lib','tools','util','wallet'],
+    packages=['nbcc'],
     version=__version__,
     install_requires=install_requires,
     tests_require=tests_requires,
