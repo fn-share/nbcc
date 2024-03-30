@@ -1,0 +1,755 @@
+#!/usr/bin/env python3
+#
+# NBC CLI tool
+# author: wayne chan
+# 2024/03/20
+
+import sys
+if sys.version_info.major < 3:
+  raise Exception('only support python v3+')
+
+import os, time, hashlib, json, click, traceback
+from binascii import hexlify, unhexlify
+
+_nbcc_root = os.path.join(os.path.expanduser('~'),'.nbcc')
+os.makedirs(_nbcc_root,exist_ok=True)
+
+sys.path.insert(0,_nbcc_root)
+
+def read_account():
+  from nbc import wallet
+  
+  acc_file = os.path.join(_nbcc_root,'.account')
+  if os.path.isfile(acc_file):
+    wif = open(acc_file,'rb').read()
+    return wallet.Address(priv_key=wif)
+  else:
+    acc = wallet.Address.generate()
+    with open(acc_file,'wb') as f:
+      f.write(acc._priv_key)
+    return acc
+
+#----
+
+@click.group()
+def cmd_line():
+  pass
+
+#----
+
+@cmd_line.group()
+def account():
+  pass
+
+@account.command()
+def info():
+  acc = read_account()
+  print('public key:',acc.publicKey().hex())
+
+#----
+
+_hint_regist_server = '''! server not defined, please regist first, run:
+  nbcc server add <hostname_or_ip>
+  nbcc server use <hostname_or_ip>'''
+_hint_not_init = '! invalid state, please call "nbcc init" first'
+
+def read_cfg(print_err=True):
+  cfg_file = './.nbcc_config'
+  if not os.path.isfile(cfg_file):
+    if print_err:
+      print(_hint_not_init)
+    return None
+  else: return json.loads(open(cfg_file,'rt').read())
+
+@cmd_line.command()
+def init():
+  ctx = ''
+  proj = os.path.split(os.path.abspath('.'))[-1]
+  
+  cfg = read_cfg(False)
+  if cfg is None:
+    ctx = json.dumps({'name':proj},indent=2) + '\n'
+  else:
+    if cfg.get('name','') != proj:
+      cfg['name'] = proj
+      ctx = json.dumps(cfg,indent=2) + '\n'
+    else: return  # no change
+  
+  cfg_file = './.nbcc_config'
+  with open(cfg_file,'wt') as f:
+    f.write(ctx)
+
+#----
+
+@cmd_line.group()
+def server():
+  pass
+
+@server.command()
+def list():
+  curr_server = ''
+  cfg = read_cfg(False)
+  if isinstance(cfg,dict):
+    curr_server = cfg.get('current','')
+  
+  counter = 0
+  servers_file = os.path.join(_nbcc_root,'.servers')
+  if os.path.isfile(servers_file):
+    b = open(servers_file,'rt').read().splitlines()
+    if curr_server and curr_server not in b:
+      b.append(curr_server)
+    
+    for line in b:
+      if line:
+        counter += 1
+        if line == curr_server:
+          line += ' *'
+        print(line)
+  
+  if counter == 0:
+    print('! no server exists')
+
+@server.command()
+@click.argument('server',default='',nargs=1)
+def add(server):
+  if not server: return
+  
+  changed = False
+  servers_file = os.path.join(_nbcc_root,'.servers')
+  if os.path.isfile(servers_file):
+    b = open(servers_file,'rt').read().splitlines()
+    b = [line for line in b if line]
+    if server not in b:
+      b.append(server)
+      changed = True
+  else:
+    b = [server]
+  
+  if changed:
+    with open(servers_file,'wt') as f:
+      f.write('\n'.join(b))
+  print('add server successful:',server)
+
+@server.command()
+@click.argument('server',default='',nargs=1)
+def remove(server):
+  if not server: return
+  
+  curr_server = ''
+  cfg = read_cfg(False)
+  if isinstance(cfg,dict):
+    curr_server = cfg.get('current','')
+  
+  changed = False
+  if curr_server and isinstance(cfg,dict) and cfg.get('current','') == curr_server:
+    cfg.pop('current',None)
+    cfg_file = './.nbcc_config'
+    with open(cfg_file,'wt') as f:
+      f.write(json.dumps(cfg,indent=2) + '\n')
+      changed = True
+  
+  servers_file = os.path.join(_nbcc_root,'.servers')
+  if os.path.isfile(servers_file):
+    b = open(servers_file,'rt').read().splitlines()
+    
+    b2 = []; change2 = False
+    for line in b:
+      if line and line != server:
+        b2.append(line)
+      else: changed2 = True
+    
+    if changed2:
+      with open(servers_file,'wt') as f:
+        f.write('\n'.join(b2))
+  
+  if changed or changed2:
+    print('remove server successful:',server)
+
+@server.command()
+@click.argument('server',default='',nargs=1)
+def use(server):
+  if not server: return
+  
+  cfg = read_cfg()
+  if cfg is None: return
+  
+  cfg['current'] = server
+  cfg_file = './.nbcc_config'
+  with open(cfg_file,'wt') as f:
+    f.write(json.dumps(cfg,indent=2) + '\n')
+  print('set current server:',server)
+
+#----
+
+@cmd_line.command()
+@click.option('--entire','-e',default=False,is_flag=True,help='entire upload')
+@click.option('--remove',default=False,is_flag=True,help='remove deployed dapp')
+@click.argument('server',default='',nargs=1)
+def deploy(entire, remove, server):
+  from urllib.error import HTTPError
+  from urllib.request import Request, urlopen
+  from urllib.parse import urlencode
+  
+  # step 1: find software and server
+  cfg = read_cfg()
+  if not cfg: return
+  software = cfg.get('name','')
+  if not software: return   # unexpected error
+  
+  if remove and software == 'tr-client':
+    print('! can not remove tr-client.')
+    return
+  
+  server = server or cfg.get('current','')
+  if not server:
+    print(_hint_regist_server)
+    print('or, change to run: nbcc deploy <hostname_or_ip>')
+    return
+  
+  # step 2: query history version
+  if entire:
+    old_ver = ''
+  else:
+    url = 'http://%s:49876/last_ver?%s' % (server,urlencode([('name',software)]))
+    try:
+      old_ver = urlopen(url,timeout=10).read().decode('utf-8')
+    except:
+      print('! connect to server (%s:49876) failed' % (server,))
+      return
+  
+  # step 3: try remove deployed version
+  acc = read_account()
+  if remove:
+    if not old_ver:
+      print('! can not remove dapp: version mismatch.')
+      return
+    
+    sig = acc.sign(('%s:%s' % (software,old_ver)).encode('utf-8')).hex()
+    data = {'name':software,'version':old_ver,'signature':sig,'tag':acc.publicKey()[-4:].hex()}
+    data = json.dumps(data).encode('utf-8')
+    
+    try:
+      state = urlopen('http://%s:49876/remove_dapp' % server,data,timeout=20).read()
+      print(state.decode('utf-8'))
+    except HTTPError as e:
+      if e.code == 401:
+        print('! error: AUTHORITY_FAIL')
+      elif e.code == 400 and e.fp:
+        print('! remove failed:',e.fp.read().decode('utf-8'))
+      else: print('! remove failed: HTTPError')
+    except:
+      print('! request failed: NETWORK_ERROR')
+    return
+  
+  # step 4: query local git version
+  b = os.popen('git log --oneline --since 365days').read().splitlines()
+  b = [line.split()[0] for line in b]
+  if not b:
+    print('! no commit version, please run "git commit" first.')
+    return
+  new_ver = b.pop(0)
+  
+  if old_ver == new_ver:
+    print('! hint: current version is same to last deploy.')
+    
+    removed = None    # None means perform restart 
+    update_all = 0
+    ha = ''
+  
+  else:
+    # step 5: create version zip file, remove history zip first
+    update_all = 1 if (not old_ver or old_ver not in b) else 0
+    
+    b = os.listdir(_nbcc_root)
+    for item in b:
+      if item[:9] == 'last_ver_' and item[-4:] == '.zip':
+        s = os.path.join(_nbcc_root,item)
+        if os.path.isfile(s):
+          try:
+            os.remove(s)
+          except: pass
+    
+    zip_file = os.path.join(_nbcc_root,'last_ver_%s.zip' % (software,))
+    zip_cmd = 'git archive --format=zip --prefix=%s/ -o "%s" %s' % (new_ver,zip_file,new_ver)
+    removed = []
+    if not update_all:
+      zip_cmd += ' $(git diff --name-only --diff-filter AM %s %s)' % (old_ver,new_ver)
+      removed = os.popen('git diff --name-only --diff-filter D %s %s' % (old_ver,new_ver)).read().splitlines()
+      removed = [line for line in removed if line]
+    
+    if os.path.isfile(zip_file):
+      os.remove(zip_file)
+    
+    os.popen(zip_cmd).read()
+    time.sleep(2)
+    if not os.path.isfile(zip_file):
+      print('! prepare zip file failed.')
+      return
+    
+    last_size = 0
+    for ii in range(60):  # waiting subprocess, max waiting 60 seconds
+      st_size = os.stat(zip_file).st_size
+      if last_size == st_size:
+        break
+      else: last_size = st_size
+      time.sleep(2)
+    
+    # step 6: call /upload
+    # from io import BytesIO
+    ha = hashlib.sha256()
+    f_zip = open(zip_file,'rb'); f_size = 0
+    while True:
+      s = f_zip.read(8192)
+      if s: ha.update(s)
+      if len(s) < 8192:
+        f_size = f_zip.tell()
+        break    # finished
+    ha = ha.hexdigest()
+    f_zip.seek(0)
+    
+    be_sign = '%s:%s:%s' % (software,new_ver,ha)
+    sig = acc.sign(be_sign.encode('utf-8')).hex()
+    
+    url = 'http://%s:49876/upload?%s' % ( server,urlencode( [ ('name',software),
+      ('ver',new_ver),('sign',sig),('tag',acc.publicKey()[-4:].hex()) ] ) )
+    try:
+      print('starting upload ...')
+      req = Request(url,f_zip,headers={'Content-Type':'application/zip','Content-Length':str(f_size)})
+      state = urlopen(req,timeout=600).read()   # max wait 10 minutes
+      f_zip.close()
+      
+      if state == b'OK':
+        print('%s upload version successful: software=%s, commit=%s' % ('ENTIRE' if update_all else 'INCREMENTAL',software,new_ver))
+      else:
+        print('! upload version failed: %s' % (state.decode('utf-8'),))
+        return
+    except HTTPError as e:
+      f_zip.close()
+      
+      if e.code == 401:
+        print('! upload error: AUTHORITY_FAIL')
+      elif e.code == 400 and e.fp:
+        print('! upload failed:',e.fp.read().decode('utf-8'))
+      else: print('! upload failed: HTTPError')
+      return
+    except:
+      f_zip.close()
+      print('! upload failed: NETWORK_ERROR')
+      return
+  
+  # step 7: call API: /deploy
+  url = 'http://%s:49876/deploy' % (server,)
+  data = [int(time.time()),removed,software,new_ver,update_all,ha]
+  data = json.dumps(data,indent=None,separators=(',',':')).encode('utf-8')
+  data = b'[%s,"%s","%s"]' % (data,hexlify(acc.sign(data)),hexlify(acc.publicKey()[-4:]))
+  
+  try:
+    state = urlopen(url,data,timeout=1200).read()   # max wait 20 minutes
+    print(state.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 401:
+      print('! deploy error: AUTHORITY_FAIL')
+    elif e.code == 400 and e.fp:
+      print('! deploy failed:',e.fp.read().decode('utf-8'))
+    else: print('! deploy failed: HTTPError')
+  except:
+    print('! deploy failed: NETWORK_ERROR')
+
+#----
+
+_hint_server_desc = 'server hostname or IP address'
+
+@cmd_line.group()
+def app():
+  pass
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def list(server):
+  from urllib.error import HTTPError, URLError
+  from urllib.request import urlopen
+  
+  cfg = read_cfg()
+  if not cfg: return
+  
+  server = server or cfg.get('current','')
+  if not server:
+    print(_hint_regist_server)
+    return
+  
+  url = 'http://%s:49876/app/list' % server
+  try:
+    dapp_list = urlopen(url,timeout=10).read() # max wait 10 seconds
+    dapp_list = dapp_list.decode('utf-8').split(';')
+    group_idx = 0
+    
+    for item in dapp_list:
+      b2 = item.split(',')
+      if group_idx == 0:
+        size2 = max(len(item2) for item2 in b2) + 1
+        postfix = '(builtin)'  # first group is tr-client/plugins/dapp
+      else:
+        size2 = 0
+        postfix = ''
+      
+      for item2 in b2:
+        if item2:
+          print((item2.ljust(size2) if size2 else item2) + postfix)
+      group_idx += 1
+  
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! restart failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except URLError:
+    print('! access URL failed:',url)
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def restart(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    now_tm = int(time.time())
+    acc = read_account()
+    sig = acc.sign(b'RESTART:%i:%s' % (now_tm,dapp.encode('utf-8')))
+    data = json.dumps( {'time':now_tm,'name':dapp,
+      'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()} ).encode('utf-8')
+    
+    ret = urlopen('http://%s:49876/app/restart' % server,data,timeout=20).read() # max wait 20 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 401:
+      print('! error: AUTHORITY_FAIL')
+    elif e.code == 400 and e.fp:
+      print('! restart failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def stop(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    acc = read_account()
+    
+    now_tm = int(time.time())
+    sig = acc.sign(b'SHUTDOWN:%i:%s' % (now_tm,dapp.encode('utf-8')))
+    data = {'time':now_tm,'name':dapp,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+    data = json.dumps(data).encode('utf-8')
+    
+    ret = urlopen('http://%s:49876/app/shutdown' % server,data,timeout=20).read() # max wait 20 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 401:
+      print('! error: AUTHORITY_FAIL')
+    elif e.code == 400 and e.fp:
+      print('! stop failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def version(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    ret = urlopen('http://%s:49876/app/version?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+@click.option('--num','-n',type=click.IntRange(50,1000,clamp=True),default=200,help='fetch log line number, 50~1000, default 200')
+def log(server, num):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  if not server:
+    cfg = read_cfg()
+    if not cfg: return
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    acc = read_account()
+    
+    now_tm = int(time.time())
+    sig = acc.sign(b'LOG:%i:%i' % (now_tm,num))
+    data = {'time':now_tm,'num':num,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+    data = json.dumps(data).encode('utf-8')
+    
+    ret = urlopen('http://%s:49876/app/log' % server,data,timeout=20).read() # max wait 20 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+#----
+
+@cmd_line.group()
+def autostart():
+  pass
+
+@autostart.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def state(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    ret = urlopen('http://%s:49876/autostart/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@autostart.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def set(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  acc = read_account(); now_tm = int(time.time())
+  sig = acc.sign(b'SET_AUTO:%i:%s' % (now_tm,dapp.encode('utf-8')))
+  data = {'time':now_tm,'name':dapp,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+  data = json.dumps(data).encode('utf-8')
+  
+  try:
+    ret = urlopen('http://%s:49876/autostart/set' % server,data,timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@autostart.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def clear(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  acc = read_account(); now_tm = int(time.time())
+  sig = acc.sign(b'CLEAR_AUTO:%i:%s' % (now_tm,dapp.encode('utf-8')))
+  data = {'time':now_tm,'name':dapp,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+  data = json.dumps(data).encode('utf-8')
+  
+  try:
+    ret = urlopen('http://%s:49876/autostart/clear' % server,data,timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+#----
+
+@cmd_line.group()
+def localaccess():
+  pass
+
+@localaccess.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def state(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if dapp == 'tr-client':
+    print('none')
+    return
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    ret = urlopen('http://%s:49876/localaccess/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@localaccess.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+@click.option('--num','-n',type=click.IntRange(1,4,clamp=True),default=2,help='connection number, 1~4, default 2')
+def set(server, num):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if dapp == 'tr-client':
+    print('! localaccess not apply to tr-client.')
+    return
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  acc = read_account(); now_tm = int(time.time())
+  sig = acc.sign(b'SET_ACCESS:%i:%s:%i' % (now_tm,dapp.encode('utf-8'),num))
+  data = {'time':now_tm,'name':dapp,'num':num,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+  data = json.dumps(data).encode('utf-8')
+  
+  try:
+    ret = urlopen('http://%s:49876/localaccess/set' % server,data,timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@localaccess.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def clear(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  from urllib.parse import urlencode
+  
+  cfg = read_cfg()
+  if not cfg: return
+  dapp = cfg.get('name','')
+  if not dapp: return  # meet unexpected error
+  
+  if dapp == 'tr-client':
+    print('! localaccess not apply to tr-client.')
+    return
+  
+  if not server:
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  acc = read_account(); now_tm = int(time.time())
+  sig = acc.sign(b'CLEAR_ACCESS:%i:%s' % (now_tm,dapp.encode('utf-8')))
+  data = {'time':now_tm,'name':dapp,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+  data = json.dumps(data).encode('utf-8')
+  
+  try:
+    ret = urlopen('http://%s:49876/localaccess/clear' % server,data,timeout=10).read() # max wait 10 seconds
+    print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+if __name__ == '__main__':
+  cmd_line()
