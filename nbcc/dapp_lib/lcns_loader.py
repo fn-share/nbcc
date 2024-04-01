@@ -1,7 +1,7 @@
 # lcns_loader.py
 
-from nbc import wallet
-from dapp_lib.formatter import *
+from .. import wallet
+from .formatter import *
 
 __all__ = [ 'load_end_lcns' ]
 
