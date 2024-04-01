@@ -71,7 +71,7 @@ def _sigdecode(s, order):
   return (int(hexlify(s[:32]),16),int(hexlify(s[32:]),16))
 
 class Address(object):
-  def __init__(self, pub_key=None, priv_key=None, vcn=None, ver=b'\x00'):
+  def __init__(self, pub_key=None, priv_key=None, ver=b'\x00', vcn=None):
     self._compressed = False
     self._priv_key = priv_key
     self._ver = ver  # in BTC, ver can be b'\x00'~b'\xff', b'\x6f' for testnet
@@ -118,10 +118,10 @@ class Address(object):
     
     if vcn is None:
       self._vcn = vcn
-    else: self._vcn = int(vcn) & 0xffff
+    else: self._vcn = int(vcn) & 0xff
     
     # public address, according to uncompressed
-    self._address = util.key.publickey_to_address(self._pub_key,self._vcn,ver=self._ver)
+    self._address = util.key.publickey_to_address(self._pub_key,self._ver,self._vcn)
   
   def address(self):
     return self._address
@@ -149,24 +149,24 @@ class Address(object):
     key = number_to_string(secexp,curve.order)   # get 32 bytes number
     if compressed:
       key = key + b'\x01'
-    return Address(priv_key=util.key.privkey_to_wif(key),vcn=vcn,ver=ver)
+    return Address(priv_key=util.key.privkey_to_wif(key),ver=ver,vcn=vcn)
   
   def decompress(self):  # convert to decompressed
     if not self._compressed: return self
     
     if self._priv_key:
-      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()),vcn=self._vcn,ver=self._ver)
+      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()),ver=self._ver,vcn=self._vcn)
     if self._pub_key:
-      return Address(pub_key=util.key.decompress_public_key(self._pub_key),vcn=self._vcn,ver=self._ver)
+      return Address(pub_key=util.key.decompress_public_key(self._pub_key),ver=self._ver,vcn=self._vcn)
     raise ValueError('address cannot be decompressed')
   
   def compress(self):    # convert to compress
     if self._compressed: return self
     
     if self._priv_key:
-      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()+b'\x01'),vcn=self._vcn,ver=self._ver)
+      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()+b'\x01'),ver=self._ver,vcn=self._vcn)
     if self._pub_key:
-      return Address(pub_key=self.publicKey(),vcn=self._vcn,ver=self._ver)
+      return Address(pub_key=self.publicKey(),ver=self._ver,vcn=self._vcn)
     raise ValueError('address cannot be compressed')
   
   def _get_priv(self):
@@ -267,4 +267,4 @@ class Address(object):
     
     vcn = account.get('vcn',None)
     ver = unhexlify(account.get('ver','00'))
-    return Address(pub_key=pubKey,priv_key=prvKey,vcn=vcn,ver=ver)
+    return Address(pub_key=pubKey,priv_key=prvKey,ver=ver,vcn=vcn)

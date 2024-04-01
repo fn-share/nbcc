@@ -100,30 +100,28 @@ def privkey_from_wif(privkey, prefix = b'\x80'):
   
   raise ValueError('invalid wif private key')
 
-def publickey_to_address(publickey, vcn=None, ver=b'\x00'):
+def publickey_to_address(publickey, ver=b'\x00', vcn=None):
   pubHash = hashlib.new('ripemd160',sha256(publickey).digest()).digest()
   if vcn is None:   # for bitcoin style
     return base58.encode_check(ver + pubHash)
   else:    # for NBC parallel chain
-    return base58.encode_check(ver+_bytes(divmod(vcn&0xffff,256)) + pubHash)
+    return base58.encode_check(ver + _bytes((vcn & 0xff,)) + pubHash)
 
-def publickey_to_prefix_addr(publickey, vcn=None, prefix=''):
+def publickey_to_prefix_addr(publickey, prefix='', vcn=None):
   if not isinstance(prefix,bytes):
     prefix = prefix.encode('utf-8')
   
   pubHash = hashlib.new('ripemd160',sha256(publickey).digest()).digest()
   if vcn is None:   # for bitcoin style
     pubHash2 = pubHash
-  else: pubHash2 = _bytes(divmod(vcn & 0xffff,256)) + pubHash
+  else: pubHash2 = _bytes((vcn & 0xff,)) + pubHash
   crc = sha256(sha256(prefix + pubHash2).digest()).digest()[:4]
   return prefix + base58.b58encode(pubHash2 + crc)
 
 def publickey_to_hash(publickey):
   return hashlib.new('ripemd160',sha256(publickey).digest()).digest()
 
-def publichash_to_address(publichash, vcn=None, ver=b'\x00'):
+def publichash_to_address(publichash, ver=b'\x00', vcn=None):
   if vcn is None:
     return base58.encode_check(ver + publichash)
-  else:
-    hi,lo = divmod(vcn & 0xffff,256)
-    return base58.encode_check(ver + _bytes((lo,hi)) + publichash)
+  else: return base58.encode_check(ver + _bytes((vcn & 0xff,)) + publichash)

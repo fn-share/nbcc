@@ -197,7 +197,7 @@ class HDWallet(object):
     if not isinstance(ver,bytes):   # ver is bytes
       assert isinstance(ver,str)
       ver = ver.encode('utf-8')
-    addr = util.key.publickey_to_address(self.publicKey(),self.vcn,ver)
+    addr = util.key.publickey_to_address(self.publicKey(),ver,self.vcn)
     return addr.decode('utf-8')
   
   def publicKey(self):
@@ -206,7 +206,7 @@ class HDWallet(object):
     return self._comp_pubkey
   
   def publicHash(self):
-    return util.key.publickey_to_hash(self.publicKey(),self.vcn)
+    return util.key.publickey_to_hash(self.publicKey())
   
   def depth(self):
     return self._depth
