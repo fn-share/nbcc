@@ -78,6 +78,28 @@ def init():
   cfg_file = './.nbcc_config'
   with open(cfg_file,'wt') as f:
     f.write(ctx)
+  
+  need_gen = False
+  while True:
+    s = input('do you want generate dapp sample code? Y/N ').upper()
+    if s and s in ('Y','N'):
+      need_gen = s == 'Y'
+      break
+  
+  if need_gen:
+    targ_proj = './' + proj
+    if os.path.exists(targ_proj):
+      print('! error: file or directory (%s) already exists' % (targ_proj,))
+      return
+    
+    import nbcc, shutil
+    nbcc_sample = os.path.join(os.path.split(nbcc.__file__)[0],'sample')
+    
+    shutil.copytree(os.path.join(nbcc_sample,'sample'),targ_proj)
+    with open('./dapps.py','wt') as f:
+      f.write(open(os.path.join(nbcc_sample,'dapps.py'),'rt').read())
+    with open('./.gitignore','wt') as f:
+      f.write(open(os.path.join(nbcc_sample,'.gitignore'),'rt').read())
 
 #----
 
@@ -507,15 +529,22 @@ def version(server):
 
 @app.command()
 @click.option('--server','-s',default='',help=_hint_server_desc)
+@click.option('--monitor','-m',default=False,is_flag=True,help='fetch log from monitor.dat')
 @click.option('--num','-n',type=click.IntRange(50,1000,clamp=True),default=200,help='fetch log line number, 50~1000, default 200')
-def log(server, num):
+def log(server, monitor, num):
   from urllib.error import HTTPError
   from urllib.request import urlopen
   from urllib.parse import urlencode
   
+  cfg = read_cfg()
+  if not cfg: return
+  if monitor:
+    dapp = 'monitor'
+  else:
+    dapp = cfg.get('name','')
+    if not dapp: return  # meet unexpected error
+  
   if not server:
-    cfg = read_cfg()
-    if not cfg: return
     server = cfg.get('current','')
     if not server:
       print(_hint_regist_server)
@@ -525,8 +554,8 @@ def log(server, num):
     acc = read_account()
     
     now_tm = int(time.time())
-    sig = acc.sign(b'LOG:%i:%i' % (now_tm,num))
-    data = {'time':now_tm,'num':num,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
+    sig = acc.sign(b'LOG:%s:%i:%i' % (dapp.encode('utf-8'),now_tm,num))
+    data = {'name':dapp,'time':now_tm,'num':num,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
     data = json.dumps(data).encode('utf-8')
     
     ret = urlopen('http://%s:49876/app/log' % server,data,timeout=20).read() # max wait 20 seconds

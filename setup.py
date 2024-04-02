@@ -36,4 +36,5 @@ if __name__ == '__main__':
     author='Red Brick Inc.',
     keywords='python NBC library SDK CLI tool DAPP development',
     url='https://github.com/fn-share/nbcc',
+    scripts=['tools/nbcc'],
   )
