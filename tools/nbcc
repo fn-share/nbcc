@@ -14,10 +14,8 @@ from binascii import hexlify, unhexlify
 _nbcc_root = os.path.join(os.path.expanduser('~'),'.nbcc')
 os.makedirs(_nbcc_root,exist_ok=True)
 
-sys.path.insert(0,_nbcc_root)
-
 def read_account():
-  from nbc import wallet
+  from nbcc import wallet
   
   acc_file = os.path.join(_nbcc_root,'.account')
   if os.path.isfile(acc_file):
@@ -163,7 +161,7 @@ def remove(server):
     curr_server = cfg.get('current','')
   
   changed = False
-  if curr_server and isinstance(cfg,dict) and cfg.get('current','') == curr_server:
+  if curr_server and isinstance(cfg,dict) and curr_server == server:
     cfg.pop('current',None)
     cfg_file = './.nbcc_config'
     with open(cfg_file,'wt') as f:
@@ -264,7 +262,7 @@ def deploy(entire, remove, server):
     return
   
   # step 4: query local git version
-  b = os.popen('git log --oneline --since 365days').read().splitlines()
+  b = os.popen('git log --oneline -50 --since 365days').read().splitlines()
   b = [line.split()[0] for line in b]
   if not b:
     print('! no commit version, please run "git commit" first.')
@@ -292,7 +290,7 @@ def deploy(entire, remove, server):
           except: pass
     
     zip_file = os.path.join(_nbcc_root,'last_ver_%s.zip' % (software,))
-    zip_cmd = 'git archive --format=zip --prefix=%s/ -o "%s" %s' % (new_ver,zip_file,new_ver)
+    zip_cmd = "git archive --format=zip --prefix=%s/ -o '%s' %s" % (new_ver,zip_file,new_ver)
     removed = []
     if not update_all:
       zip_cmd += ' $(git diff --name-only --diff-filter AM %s %s)' % (old_ver,new_ver)
