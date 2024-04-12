@@ -544,19 +544,19 @@ def machine(server):
       return
   
   try:
-    ret = urlopen('http://%s:49876/app/machine?%s' % server,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49876/app/machine' % server,timeout=10).read() # max wait 10 seconds
     ret = json.loads(ret)
     
+    if 'cpu' in ret:
+      print('     cpu: ' + ret['cpu'])
+    if 'memory' in ret:
+      print('  memory: ' + ret['memory'])
+    storage = ret.get('storage',[])
+    if storage:
+      print(' storage: ' + ', '.join(storage))
     if 'model' in ret and 'category' in ret:
       models = ('1','2','3','4'); categories = ('a','b','c','d','e','f')
       print('hardware: %s%s' % (models[ret['model']],categories[ret['category']]))
-    if 'cpu' in ret:
-      print('cpu: ' + ret['cpu'])
-    if 'memory' in ret:
-      print('memory: ' + ret['memory'])
-    storage = ret.get('storage',[])
-    if storage:
-      print('storage: ' + ', '.join(storage))
   
   except HTTPError as e:
     if e.code == 400 and e.fp:
