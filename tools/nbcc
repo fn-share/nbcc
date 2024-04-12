@@ -293,7 +293,10 @@ def deploy(entire, remove, server):
     zip_cmd = "git archive --format=zip --prefix=%s/ -o '%s' %s" % (new_ver,zip_file,new_ver)
     removed = []
     if not update_all:
-      zip_cmd += ' $(git diff --name-only --diff-filter AM %s %s)' % (old_ver,new_ver)
+      # zip_cmd += ' $(git diff --name-only --diff-filter AM %s %s)' % (old_ver,new_ver)
+      add_mod = os.popen('git diff --name-only --diff-filter AM %s %s' % (old_ver,new_ver)).read().splitlines()
+      zip_cmd += ' ' + ' '.join("'" + item + "'" for item in add_mod if item)
+      
       removed = os.popen('git diff --name-only --diff-filter D %s %s' % (old_ver,new_ver)).read().splitlines()
       removed = [line for line in removed if line]
     
@@ -518,6 +521,43 @@ def version(server):
   try:
     ret = urlopen('http://%s:49876/app/version?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
+  except HTTPError as e:
+    if e.code == 400 and e.fp:
+      print('! request failed:',e.fp.read().decode('utf-8'))
+    else: print('! request failed: HTTPError')
+  except:
+    print('! request failed: NETWORK_ERROR')
+
+@app.command()
+@click.option('--server','-s',default='',help=_hint_server_desc)
+def machine(server):
+  from urllib.error import HTTPError
+  from urllib.request import urlopen
+  
+  if not server:
+    cfg = read_cfg()
+    if not cfg: return
+    
+    server = cfg.get('current','')
+    if not server:
+      print(_hint_regist_server)
+      return
+  
+  try:
+    ret = urlopen('http://%s:49876/app/machine?%s' % server,timeout=10).read() # max wait 10 seconds
+    ret = json.loads(ret)
+    
+    if 'model' in ret and 'category' in ret:
+      models = ('1','2','3','4'); categories = ('a','b','c','d','e','f')
+      print('hardware: %s%s' % (models[ret['model']],categories[ret['category']]))
+    if 'cpu' in ret:
+      print('cpu: ' + ret['cpu'])
+    if 'memory' in ret:
+      print('memory: ' + ret['memory'])
+    storage = ret.get('storage',[])
+    if storage:
+      print('storage: ' + ', '.join(storage))
+  
   except HTTPError as e:
     if e.code == 400 and e.fp:
       print('! request failed:',e.fp.read().decode('utf-8'))
