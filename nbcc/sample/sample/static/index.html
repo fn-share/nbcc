@@ -78,11 +78,11 @@
 <script>
 const PAGE_INFO = {
   name: 'sample',
-  title: 'sample',
+  title: 'dapp样例',
   tee_required: false,
   menus: [
-   {name:'config',desc:'配置',url:'config.html'},
-   {name:'manual',desc:'手册',url:'book/index.html'},
+// {name:'config',desc:'配置',url:'config.html'},
+// {name:'manual',desc:'手册',url:'book/index.html'},
   ],
 };
 
@@ -263,7 +263,7 @@ function getState(retry_num, renew, callback) {
       desc = '等待初始化';
     else {
       if (tee_state == 'ERR_NO_CARD') {
-        if (PAGE_INFO.tee_required)
+        if (PAGE_INFO.tee_required || !data.no_tee)
           desc = '未发现设备';
         else desc = '';
       }
@@ -280,7 +280,7 @@ function updateTeeState(renew) {
     // tee_state = 'ERR_NO_ACCOUNT';
     if (tee_state == 'ERR_NO_CARD') {
       last_base36_name = data.base36;
-      if (PAGE_INFO.tee_required)
+      if (PAGE_INFO.tee_required || !data.no_tee)
         $('#hint-area,#no-device').removeClass('d-none');
       else {
         last_plt_pubkey = '';
