@@ -201,10 +201,12 @@ def use(server):
 
 #----
 
+_hint_server_desc = 'server hostname or IP address'
+
 @cmd_line.command()
 @click.option('--entire','-e',default=False,is_flag=True,help='entire upload')
 @click.option('--remove',default=False,is_flag=True,help='remove deployed dapp')
-@click.argument('server',default='',nargs=1)
+@click.option('--server','-s',default='',help=_hint_server_desc)
 def deploy(entire, remove, server):
   from urllib.error import HTTPError
   from urllib.request import Request, urlopen
@@ -379,8 +381,6 @@ def deploy(entire, remove, server):
     print('! deploy failed: NETWORK_ERROR')
 
 #----
-
-_hint_server_desc = 'server hostname or IP address'
 
 @cmd_line.group()
 def app():
