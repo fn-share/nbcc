@@ -232,11 +232,11 @@ def deploy(entire, remove, server):
   if entire:
     old_ver = ''
   else:
-    url = 'http://%s:49876/last_ver?%s' % (server,urlencode([('name',software)]))
+    url = 'http://%s:49001/last_ver?%s' % (server,urlencode([('name',software)]))
     try:
       old_ver = urlopen(url,timeout=10).read().decode('utf-8')
     except:
-      print('! connect to server (%s:49876) failed' % (server,))
+      print('! connect to server (%s:49001) failed' % (server,))
       return
   
   # step 3: try remove deployed version
@@ -251,7 +251,7 @@ def deploy(entire, remove, server):
     data = json.dumps(data).encode('utf-8')
     
     try:
-      state = urlopen('http://%s:49876/remove_dapp' % server,data,timeout=20).read()
+      state = urlopen('http://%s:49001/remove_dapp' % server,data,timeout=20).read()
       print(state.decode('utf-8'))
     except HTTPError as e:
       if e.code == 401:
@@ -335,7 +335,7 @@ def deploy(entire, remove, server):
     be_sign = '%s:%s:%s' % (software,new_ver,ha)
     sig = acc.sign(be_sign.encode('utf-8')).hex()
     
-    url = 'http://%s:49876/upload?%s' % ( server,urlencode( [ ('name',software),
+    url = 'http://%s:49001/upload?%s' % ( server,urlencode( [ ('name',software),
       ('ver',new_ver),('sign',sig),('tag',acc.publicKey()[-4:].hex()) ] ) )
     try:
       print('starting upload ...')
@@ -363,7 +363,7 @@ def deploy(entire, remove, server):
       return
   
   # step 7: call API: /deploy
-  url = 'http://%s:49876/deploy' % (server,)
+  url = 'http://%s:49001/deploy' % (server,)
   data = [int(time.time()),removed,software,new_ver,update_all,ha]
   data = json.dumps(data,indent=None,separators=(',',':')).encode('utf-8')
   data = b'[%s,"%s","%s"]' % (data,hexlify(acc.sign(data)),hexlify(acc.publicKey()[-4:]))
@@ -400,7 +400,7 @@ def list(server):
     print(_hint_regist_server)
     return
   
-  url = 'http://%s:49876/app/list' % server
+  url = 'http://%s:49001/app/list' % server
   try:
     dapp_list = urlopen(url,timeout=10).read() # max wait 10 seconds
     dapp_list = dapp_list.decode('utf-8').split(';')
@@ -453,7 +453,7 @@ def restart(server):
     data = json.dumps( {'time':now_tm,'name':dapp,
       'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()} ).encode('utf-8')
     
-    ret = urlopen('http://%s:49876/app/restart' % server,data,timeout=20).read() # max wait 20 seconds
+    ret = urlopen('http://%s:49001/app/restart' % server,data,timeout=20).read() # max wait 20 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 401:
@@ -489,7 +489,7 @@ def stop(server):
     data = {'time':now_tm,'name':dapp,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
     data = json.dumps(data).encode('utf-8')
     
-    ret = urlopen('http://%s:49876/app/shutdown' % server,data,timeout=20).read() # max wait 20 seconds
+    ret = urlopen('http://%s:49001/app/shutdown' % server,data,timeout=20).read() # max wait 20 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 401:
@@ -519,7 +519,7 @@ def version(server):
       return
   
   try:
-    ret = urlopen('http://%s:49876/app/version?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/app/version?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -544,7 +544,7 @@ def machine(server):
       return
   
   try:
-    ret = urlopen('http://%s:49876/app/machine' % server,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/app/machine' % server,timeout=10).read() # max wait 10 seconds
     ret = json.loads(ret)
     
     if 'cpu' in ret:
@@ -596,7 +596,7 @@ def log(server, monitor, num):
     data = {'name':dapp,'time':now_tm,'num':num,'tag':acc.publicKey()[-4:].hex(),'signature':sig.hex()}
     data = json.dumps(data).encode('utf-8')
     
-    ret = urlopen('http://%s:49876/app/log' % server,data,timeout=20).read() # max wait 20 seconds
+    ret = urlopen('http://%s:49001/app/log' % server,data,timeout=20).read() # max wait 20 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -630,7 +630,7 @@ def state(server):
       return
   
   try:
-    ret = urlopen('http://%s:49876/autostart/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/autostart/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -663,7 +663,7 @@ def set(server):
   data = json.dumps(data).encode('utf-8')
   
   try:
-    ret = urlopen('http://%s:49876/autostart/set' % server,data,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/autostart/set' % server,data,timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -696,7 +696,7 @@ def clear(server):
   data = json.dumps(data).encode('utf-8')
   
   try:
-    ret = urlopen('http://%s:49876/autostart/clear' % server,data,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/autostart/clear' % server,data,timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -734,7 +734,7 @@ def state(server):
       return
   
   try:
-    ret = urlopen('http://%s:49876/localaccess/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/localaccess/state?%s' % (server,urlencode([('name',dapp)])),timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -772,7 +772,7 @@ def set(server, num):
   data = json.dumps(data).encode('utf-8')
   
   try:
-    ret = urlopen('http://%s:49876/localaccess/set' % server,data,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/localaccess/set' % server,data,timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
@@ -809,7 +809,7 @@ def clear(server):
   data = json.dumps(data).encode('utf-8')
   
   try:
-    ret = urlopen('http://%s:49876/localaccess/clear' % server,data,timeout=10).read() # max wait 10 seconds
+    ret = urlopen('http://%s:49001/localaccess/clear' % server,data,timeout=10).read() # max wait 10 seconds
     print(ret.decode('utf-8'))
   except HTTPError as e:
     if e.code == 400 and e.fp:
