@@ -568,8 +568,9 @@ def machine(server):
 @app.command()
 @click.option('--server','-s',default='',help=_hint_server_desc)
 @click.option('--monitor','-m',default=False,is_flag=True,help='fetch log from monitor.dat')
+@click.option('--file','-f',default='',help='fetch log from file')
 @click.option('--num','-n',type=click.IntRange(50,1000,clamp=True),default=200,help='fetch log line number, 50~1000, default 200')
-def log(server, monitor, num):
+def log(server, monitor, file, num):
   from urllib.error import HTTPError
   from urllib.request import urlopen
   from urllib.parse import urlencode
@@ -578,6 +579,8 @@ def log(server, monitor, num):
   if not cfg: return
   if monitor:
     dapp = 'monitor'
+  elif file:  # such as 'suo5.out'
+    dapp = 'FILE:' + file
   else:
     dapp = cfg.get('name','')
     if not dapp: return  # meet unexpected error
