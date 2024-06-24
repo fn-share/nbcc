@@ -312,12 +312,12 @@ def deploy(entire, remove, server):
       return
     
     last_size = 0
-    for ii in range(60):  # waiting subprocess, max waiting 60 seconds
+    for ii in range(100):  # waiting subprocess done, max waiting 5 minutes
       st_size = os.stat(zip_file).st_size
       if last_size == st_size:
         break
       else: last_size = st_size
-      time.sleep(2)
+      time.sleep(3)
     
     # step 6: call /upload
     # from io import BytesIO
@@ -338,7 +338,7 @@ def deploy(entire, remove, server):
     url = 'http://%s:49001/upload?%s' % ( server,urlencode( [ ('name',software),
       ('ver',new_ver),('sign',sig),('tag',acc.publicKey()[-4:].hex()) ] ) )
     try:
-      print('starting upload ...')
+      print('starting upload to %s ...' % (server,))
       req = Request(url,f_zip,headers={'Content-Type':'application/zip','Content-Length':str(f_size)})
       state = urlopen(req,timeout=600).read()   # max wait 10 minutes
       f_zip.close()
