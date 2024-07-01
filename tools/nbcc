@@ -206,8 +206,9 @@ _hint_server_desc = 'server hostname or IP address'
 @cmd_line.command()
 @click.option('--entire','-e',default=False,is_flag=True,help='entire upload')
 @click.option('--remove',default=False,is_flag=True,help='remove deployed dapp')
+@click.option('--zip','-z',default=False,is_flag=True,help='export ZIP file')
 @click.option('--server','-s',default='',help=_hint_server_desc)
-def deploy(entire, remove, server):
+def deploy(entire, remove, zip, server):
   from urllib.error import HTTPError
   from urllib.request import Request, urlopen
   from urllib.parse import urlencode
@@ -229,7 +230,10 @@ def deploy(entire, remove, server):
     return
   
   # step 2: query history version
-  if entire:
+  if zip:
+    entire = True
+    old_ver = ''
+  elif entire:
     old_ver = ''
   else:
     url = 'http://%s:49001/last_ver?%s' % (server,urlencode([('name',software)]))
@@ -319,10 +323,18 @@ def deploy(entire, remove, server):
       else: last_size = st_size
       time.sleep(3)
     
-    # step 6: call /upload
-    # from io import BytesIO
+    # step 6: dump zip file
+    f_zip = open(zip_file,'rb')
+    if zip:
+      zip_app_file = software + '.zip'
+      open(zip_app_file,'wb').write(f_zip.read())
+      f_zip.close()
+      print('success pack software to ' + zip_app_file)
+      return
+    
+    # step 7: call API: /upload
     ha = hashlib.sha256()
-    f_zip = open(zip_file,'rb'); f_size = 0
+    f_size = 0
     while True:
       s = f_zip.read(8192)
       if s: ha.update(s)
@@ -362,7 +374,7 @@ def deploy(entire, remove, server):
       print('! upload failed: NETWORK_ERROR')
       return
   
-  # step 7: call API: /deploy
+  # step 8: call API: /deploy
   url = 'http://%s:49001/deploy' % (server,)
   data = [int(time.time()),removed,software,new_ver,update_all,ha]
   data = json.dumps(data,indent=None,separators=(',',':')).encode('utf-8')
