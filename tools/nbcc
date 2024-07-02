@@ -206,9 +206,8 @@ _hint_server_desc = 'server hostname or IP address'
 @cmd_line.command()
 @click.option('--entire','-e',default=False,is_flag=True,help='entire upload')
 @click.option('--remove',default=False,is_flag=True,help='remove deployed dapp')
-@click.option('--zip','-z',default=False,is_flag=True,help='export ZIP file')
 @click.option('--server','-s',default='',help=_hint_server_desc)
-def deploy(entire, remove, zip, server):
+def deploy(entire, remove, server):
   from urllib.error import HTTPError
   from urllib.request import Request, urlopen
   from urllib.parse import urlencode
@@ -230,10 +229,7 @@ def deploy(entire, remove, zip, server):
     return
   
   # step 2: query history version
-  if zip:
-    entire = True
-    old_ver = ''
-  elif entire:
+  if entire:
     old_ver = ''
   else:
     url = 'http://%s:49001/last_ver?%s' % (server,urlencode([('name',software)]))
@@ -323,17 +319,9 @@ def deploy(entire, remove, zip, server):
       else: last_size = st_size
       time.sleep(3)
     
-    # step 6: dump zip file
-    f_zip = open(zip_file,'rb')
-    if zip:
-      zip_app_file = software + '.zip'
-      open(zip_app_file,'wb').write(f_zip.read())
-      f_zip.close()
-      print('success pack software to ' + zip_app_file)
-      return
-    
-    # step 7: call API: /upload
+    # step 6: call API: /upload
     ha = hashlib.sha256()
+    f_zip = open(zip_file,'rb')
     f_size = 0
     while True:
       s = f_zip.read(8192)
@@ -374,7 +362,7 @@ def deploy(entire, remove, zip, server):
       print('! upload failed: NETWORK_ERROR')
       return
   
-  # step 8: call API: /deploy
+  # step 7: call API: /deploy
   url = 'http://%s:49001/deploy' % (server,)
   data = [int(time.time()),removed,software,new_ver,update_all,ha]
   data = json.dumps(data,indent=None,separators=(',',':')).encode('utf-8')
@@ -397,6 +385,44 @@ def deploy(entire, remove, zip, server):
 @cmd_line.group()
 def app():
   pass
+
+@app.command()
+def dump():
+  # step 1: find software
+  cfg = read_cfg()
+  if not cfg: return
+  software = cfg.get('name','')
+  if not software: return   # unexpected error
+  
+  # step 2: query local git version, max 10 items
+  b = os.popen('git log --oneline -10 --since 365days').read().splitlines()
+  b = [line.split()[0] for line in b]
+  if not b:
+    print('! no commit version, please run "git commit" first.')
+    return
+  new_ver = b.pop(0)
+  
+  # step 3: dump zip file
+  zip_app_file = '%s_%s.zip' % (software,new_ver)
+  if os.path.isfile(zip_app_file):
+    os.remove(zip_app_file)
+  
+  zip_cmd = "git archive --format=zip -o '%s' %s" % (zip_app_file,new_ver)
+  os.popen(zip_cmd).read()
+  time.sleep(2)
+  if not os.path.isfile(zip_file):
+    print('! prepare zip file failed.')
+    return
+  
+  last_size = 0
+  for ii in range(100):  # waiting subprocess done, max waiting 5 minutes
+    st_size = os.stat(zip_file).st_size
+    if last_size == st_size:
+      break
+    else: last_size = st_size
+    time.sleep(3)
+  
+  print('success dump software: ' + zip_app_file)
 
 @app.command()
 @click.option('--server','-s',default='',help=_hint_server_desc)
