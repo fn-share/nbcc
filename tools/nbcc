@@ -410,13 +410,13 @@ def dump():
   zip_cmd = "git archive --format=zip -o '%s' %s" % (zip_app_file,new_ver)
   os.popen(zip_cmd).read()
   time.sleep(2)
-  if not os.path.isfile(zip_file):
+  if not os.path.isfile(zip_app_file):
     print('! prepare zip file failed.')
     return
   
   last_size = 0
   for ii in range(100):  # waiting subprocess done, max waiting 5 minutes
-    st_size = os.stat(zip_file).st_size
+    st_size = os.stat(zip_app_file).st_size
     if last_size == st_size:
       break
     else: last_size = st_size
