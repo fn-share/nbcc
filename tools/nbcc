@@ -206,8 +206,9 @@ _hint_server_desc = 'server hostname or IP address'
 @cmd_line.command()
 @click.option('--entire','-e',default=False,is_flag=True,help='entire upload')
 @click.option('--remove',default=False,is_flag=True,help='remove deployed dapp')
+@click.option('--gitmirror',default=False,is_flag=True,help='use github mirror')
 @click.option('--server','-s',default='',help=_hint_server_desc)
-def deploy(entire, remove, server):
+def deploy(entire, remove, gitmirror, server):
   from urllib.error import HTTPError
   from urllib.request import Request, urlopen
   from urllib.parse import urlencode
@@ -364,7 +365,7 @@ def deploy(entire, remove, server):
   
   # step 7: call API: /deploy
   url = 'http://%s:49001/deploy' % (server,)
-  data = [int(time.time()),removed,software,new_ver,update_all,ha]
+  data = [int(time.time()),removed,software,new_ver,update_all,ha,gitmirror]
   data = json.dumps(data,indent=None,separators=(',',':')).encode('utf-8')
   data = b'[%s,"%s","%s"]' % (data,hexlify(acc.sign(data)),hexlify(acc.publicKey()[-4:]))
   
@@ -607,7 +608,7 @@ def machine(server):
 @click.option('--server','-s',default='',help=_hint_server_desc)
 @click.option('--monitor','-m',default=False,is_flag=True,help='fetch log from monitor.dat')
 @click.option('--file','-f',default='',help='fetch log from file')
-@click.option('--num','-n',type=click.IntRange(50,1000,clamp=True),default=200,help='fetch log line number, 50~1000, default 200')
+@click.option('--num','-n',type=click.IntRange(50,1000,clamp=True),default=300,help='fetch log line number, 50~1000, default 300')
 def log(server, monitor, file, num):
   from urllib.error import HTTPError
   from urllib.request import urlopen
