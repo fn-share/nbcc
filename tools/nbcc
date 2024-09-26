@@ -313,12 +313,14 @@ def deploy(entire, remove, gitmirror, server):
       return
     
     last_size = 0
-    for ii in range(100):  # waiting subprocess done, max waiting 5 minutes
+    for ii in range(300):  # waiting subprocess done, max waiting 10 minutes
       st_size = os.stat(zip_file).st_size
       if last_size == st_size:
-        break
+        time.sleep(4)
+        if os.stat(zip_file).st_size == last_size:
+          break
       else: last_size = st_size
-      time.sleep(3)
+      time.sleep(2)
     
     # step 6: call API: /upload
     ha = hashlib.sha256()
