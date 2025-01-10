@@ -593,8 +593,12 @@ def machine(server):
     if 'memory' in ret:
       print('  memory: ' + ret['memory'])
     storage = ret.get('storage',[])
+    if isinstance(storage,str):
+      
     if storage:
-      print(' storage: ' + ', '.join(storage))
+      if isinstance(storage,str):
+        print(' storage: ' + storage)
+      else: print(' storage: ' + ', '.join(storage))
     if 'model' in ret and 'category' in ret:
       models = ('1','2','3','4'); categories = ('a','b','c','d','e','f')
       print('hardware: %s%s' % (models[ret['model']],categories[ret['category']]))
