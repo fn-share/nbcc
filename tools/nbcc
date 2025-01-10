@@ -593,8 +593,6 @@ def machine(server):
     if 'memory' in ret:
       print('  memory: ' + ret['memory'])
     storage = ret.get('storage',[])
-    if isinstance(storage,str):
-      
     if storage:
       if isinstance(storage,str):
         print(' storage: ' + storage)
