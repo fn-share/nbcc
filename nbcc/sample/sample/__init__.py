@@ -1,4 +1,4 @@
-# __init__.py
+# tee/__init__.py
 
 import sys
 if sys.version_info.major < 3:

@@ -19,6 +19,11 @@ def get_url_root():
   
   if host and sub_domain:        # from API Gateway
     proto = request.headers.get('X-Forwarded-Proto','http')
+    if len(sub_domain) >= 20:
+      b = host.split('.')
+      if len(b) >= 3 and b[0].split('-')[-1] == sub_domain:  # sub_domain is base36
+        return '%s://%s%s' % (proto,host,prefix)
+    
     return '%s://%s/%s%s' % (proto,host,sub_domain,prefix)
   else:
     # if 'X-Nbc-Sn' in request.headers: pass  # from tr-client

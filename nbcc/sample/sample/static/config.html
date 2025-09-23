@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv=X-UA-Compatible content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="//www.nb-chain.cn/www/common/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body>
+
+<style>
+#stat-page-area .page-link {
+  cursor: default;
+}
+</style>
+
+<div class="container-fluid p-3"><div class="row">
+  <div class="col-sm-4 col-md-3 col-lg-2 pb-4">
+    <div class="list-group text-center" id="list-tab" role="tablist">
+      <a class="list-group-item list-group-item-action active" id="list-about-list" data-bs-toggle="list" href="#list-about" role="tab">关于</a>
+      <a class="list-group-item list-group-item-action" id="list-config-list" data-bs-toggle="list" href="#list-config" role="tab">配置</a>
+    </div>
+  </div>
+  <div class="col-sm-8 col-md-9 col-lg-10 pe-3"><div class="tab-content" id="nav-tabContent">
+
+<div class="tab-pane fade show active" id="list-about" role="tabpanel">
+<h3 class="mb-4">关于</h3>
+<div class="mb-3">bla, bla ...</div>
+</div>
+
+<div class="tab-pane fade" id="list-config" role="tabpanel">
+<h3 class="mb-4">版本</h3>
+<div class="mb-3"><button class="btn btn-primary shadow-none" type="button" id="btn-show-ver">显示版本信息</button>&nbsp; <button class="btn btn-primary shadow-none d-none" type="button" data-url="" id="btn-jmp-install">安装最新版本</button></div>
+<div class="mb-3 d-none" id="version-info"></div>
+</div>
+
+  </div></div>
+</div></div>
+
+<script src="//www.nb-chain.cn/www/common/js/jquery-3.6.0.slim.min.js"></script>
+<script src="//www.nb-chain.cn/www/common/js/popper.min.js"></script>
+<script src="//www.nb-chain.cn/www/common/js/bootstrap.min.js"></script>
+
+<script>
+function getCookie__(name) {
+  if (document.cookie.length > 0) {
+    var iEnd, iStart = document.cookie.indexOf(name + '=');
+    if (iStart != -1) {
+      iStart = iStart + name.length + 1;
+      iEnd = document.cookie.indexOf(';',iStart);
+      if (iEnd == -1) iEnd = document.cookie.length;
+      return unescape(document.cookie.substring(iStart,iEnd));
+    }
+  }
+  return '';
+}
+
+function setCookie__(name,value,expireDays,path) {
+  expireDays = expireDays || 1;
+  var exDate = new Date();
+  exDate.setTime(exDate.getTime() + expireDays*86400000);  // 24*60*60*1000=86400000
+  path = path || '/';
+  document.cookie = name + '=' + escape(value) + ';expires=' + exDate.toGMTString() + ';path=' + path + ';';
+}
+
+function delCookie__(name,path) {
+  if (document.cookie.length > 0) {
+    var iStart = document.cookie.indexOf(name + '=');
+    if (iStart != -1) {
+      var exp = new Date();
+      exp.setTime(exp.getTime() - 1);
+      path = path || '/';
+      document.cookie = name + '=;expires=' + exp.toGMTString() + ';path=' + path + ';';
+    }
+  }
+}
+
+function wait__(promise_obj, wait) {
+  var abort_fn = null;
+  let abortable_promise = Promise.race([ promise_obj,
+    new Promise( function(resolve, reject) {
+      abort_fn = function() { reject(new Error('TIMEOUT')) };
+    })
+  ]);
+  
+  setTimeout(()=>abort_fn(),wait);
+  return abortable_promise;
+}
+
+function url_fetch(url, callback, options, timeout) {
+  wait__(fetch(url,options),timeout || 30000).then( res => {
+    if (res.status == 200)
+      return res.json();
+    else {
+      if (res.status == 401)
+        alert('未登录或登录超时');
+      return null;   // ignore other res.status
+    }
+  }, e => null ).then( data => {
+    if (callback) callback(data);  // data can be null
+  });
+}
+
+//----
+
+function temporaryDisable(node) {
+  let curr = $(node);
+  curr.attr('disabled',true);
+  setTimeout(() => curr.attr('disabled',false),1500);
+}
+
+$( () => {
+  $('#btn-show-ver').on('click', ev => {
+    temporaryDisable(ev.target);
+    
+    url_fetch('../version?newest=1', data => {
+      if (data?.result == 'success') {
+        let lastVer  = data?.last_ver;
+        let lastURL  = data?.url;
+        let lastDesc = data?.desc;
+        let isNewest = data.version === lastVer;
+        
+        let sHtml = `当前版本：${data.version}`;
+        if (!isNewest && typeof lastVer == 'string')
+          sHtml += `<br>最新版本：${lastVer}`;
+        if (typeof lastDesc == 'string')
+          sHtml += `<br>版本描述：${lastDesc}`;
+        $('#version-info').removeClass('d-none').html(sHtml);
+        
+        let canJump  = !isNewest && typeof lastURL == 'string';
+        $('#btn-jmp-install').toggleClass('d-none',!canJump).data('url',lastURL || '');
+      }
+      else {
+        let desc = data?.message || '';
+        desc = '请求失败' + (desc? '：': '') + desc;
+        alert(desc);
+      }
+    });
+  });
+  
+  $('#btn-jmp-install').on('click', ev => {
+    temporaryDisable(ev.target);
+    
+    let url = $('#btn-jmp-install').data('url');
+    if (typeof url == 'string' && url) {
+      url = decodeURI(url);
+      url = encodeURIComponent(url);
+      window.open('../../static/?task=install_dapp&args='+url,'_blank');
+    }
+  });
+});
+</script>
+
+</body>
+</html>

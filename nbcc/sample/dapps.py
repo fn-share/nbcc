@@ -1,8 +1,8 @@
 # dapps.py
 
 import sys, os
-if sys.version_info.major < 3:
-  raise Exception('only support python v3+')
+if sys.version_info.major < 3 or (sys.version_info.major == 3 and sys.version_info.minor < 9):
+  raise Exception('only support python v3.9+')
 
 #---- config logger
 
@@ -71,13 +71,17 @@ def dbg_loop():
     
     run_code(s)
 
-if sys.flags.debug:     # when start with: python3 -d application.py
+if sys.flags.debug:     # when start with: python3 -d dapps.py
   Timer(8,dbg_loop).start()
 
 
 #---- prepare RELAY_SERVER, APP_NAME
 
-RELAY_SERVER = os.environ.get('RELAY_SERVER','')
+_relay_server = os.environ.get('RELAY_SERVER','')
+if _relay_server.split(':')[0] in ('0.0.0.0','localhost','127.0.0.1'):
+  RELAY_SERVER  = ''     # get access token by file: red-brick/var/.nbc_login
+else:
+  RELAY_SERVER  = _relay_server   # query access token by HTTP
 
 def _auto_locate_dapp():
   # first find from sys.argv
@@ -122,39 +126,80 @@ def _load_lcns_info():
   assert info[3]._._name.decode('utf-8') == APP_NAME
   return info
 
-_lcns_info = _load_lcns_info() if RELAY_SERVER else None  # when connect to tr-client, we try locate license.dat file
+_lcns_info = _load_lcns_info() if _relay_server else None  # when connect to tr-client, we try locate license.dat file
 
 #---- load config file and create FLASK app
 
 import time, json, importlib
 
+from urllib.request import urlopen
+from urllib import parse as urlparse
 from nbcc.dapp_lib.dapp_cfg import DappConfig
 
 app = None
 runtime = {}
 
-_rb_var_file = os.path.join(os.path.expanduser('~'),'red-brick','var')
-os.makedirs(_rb_var_file,exist_ok=True)
-_rb_var_file = os.path.join(_rb_var_file,'.nbc_login')
+_ignore_login_tok = bool(os.environ.get('IGNORE_LOGIN_TOK'))
 
-_login_tokens = []
-_login_renew_tm = 0
-_ignore_tee_tok = bool(os.environ.get('IGNORE_TEE_TOK'))
+if RELAY_SERVER:
+  _login_token_dict = {}   # set((expired_tm{token:expired_tm}
+  _get_token_prefix = 'http://' + RELAY_SERVER.split(':')[0] + ':49001/check_token?tok='
+else:
+  _rb_var_file = os.path.join(os.path.expanduser('~'),'red-brick','var')
+  os.makedirs(_rb_var_file,exist_ok=True)
+  _rb_var_file = os.path.join(_rb_var_file,'.nbc_login')
+  
+  _login_tokens = []       # [ [time_str,token], ... ]
+  _login_renew_tm = 0
 
 def check_token_ok(request):
-  if _ignore_tee_tok: return 'IGNORED'
+  if _ignore_login_tok: return 'IGNORED'
   
   ret = ''
   tee_tok = request.cookies.get('_tee_tok_','')
+  if not tee_tok: return ret
   
-  if tee_tok:
+  if RELAY_SERVER:  # according to nbc-monitor
+    # step 1: first check existing
+    tm = _login_token_dict.get(tee_tok,0)
+    now = int(time.time())
+    if tm:
+      if tm < now:
+        _login_token_dict.pop(tee_tok,None)  # remove expired item
+        return ret
+      else: return tee_tok
+    
+    # step 2: then query from nbc-monitor
+    url = _get_token_prefix + urlparse.quote(tee_tok)
+    s = ''
+    try:
+      s = urlopen(url,timeout=5).read().decode('utf-8')
+    except:   # try again when meet error
+      try:
+        s = urlopen(url,timeout=5).read().decode('utf-8')
+      except: pass
+    
+    if s:
+      try:
+        # step 3: if check OK, save _login_token_dict, and try remove expired items
+        expire_tm = int(s)
+        _login_token_dict[tee_tok] = expire_tm
+        ret = tee_tok   # check token OK
+        
+        if len(_login_token_dict) > 16:
+          rmv = [k for k,v in _login_token_dict.items() if v < now]
+          for k in rmv: _login_token_dict.pop(k,None)
+      except:
+        logger.warning(traceback.format_exc())
+  
+  else:   # according to local tr-client
     for _,tok in _login_tokens:
       if tok == tee_tok:
         return tok
     
     global _login_renew_tm
     now_tm = time.time()
-    if now_tm - _login_renew_tm < 10: return ret  # ignore when just now reloaded
+    if now_tm - _login_renew_tm < 5: return ret  # ignore when just now reloaded
     
     try:
       tmp = []
@@ -169,9 +214,12 @@ def check_token_ok(request):
       
       _login_tokens[:] = tmp[-16:]  # max hold 16 items
       _login_renew_tm = now_tm
-    except: pass
+    except:
+      logger.warning(traceback.format_exc())
   
   return ret
+
+#----
 
 def localhost_main(tcp_port, config, dist_name, inDebug=False):
   global app
@@ -253,7 +301,6 @@ def root_main(config, relay_serv, dist_name, inDebug=False):
   from twisted.internet import reactor
   reactor.run()     # holding here
 
-
 if __name__ == '__main__':
   assert APP_NAME
   runtime = importlib.import_module(APP_NAME).runtime
@@ -264,14 +311,13 @@ if __name__ == '__main__':
   runtime['config'] = config
   inDebug = bool(sys.flags.debug and sys.flags.interactive)
   
-  if RELAY_SERVER:  # connect to tr-client
+  if _relay_server:     # with TCP connection
     _route_prefix = APP_NAME
-    root_main(config,RELAY_SERVER,APP_NAME,inDebug)
+    root_main(config,_relay_server,APP_NAME,inDebug)
   
   else:   # listen at local machine
     runtime['LISTEN_PORT'] = lsn_port = os.environ.get('LISTEN_PORT','8000')
     localhost_main(int(lsn_port),config,APP_NAME,inDebug)
-
 
 # Usage:
 #   python3 -i -d -u dapps.py sample
@@ -280,4 +326,4 @@ if __name__ == '__main__':
 # Environment:
 #   LISTEN_PORT=8000             # start local http server when RELAY_SERVER is empty, default is 8000
 #   RELAY_SERVER=localhost:8001  # relay by tr-client that suggest using 8001 port, default RELAY_SERVER is empty
-#   IGNORE_TEE_TOK=1             # cookie-var '_tee_tok_' pseudo checking
+#   IGNORE_LOGIN_TOK=1           # cookie-var '_tee_tok_' pseudo checking, for testing

@@ -2,6 +2,8 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv=X-UA-Compatible content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title></title>
 <link href="//www.nb-chain.cn/www/common/css/bootstrap.min.css" rel="stylesheet">
 <link rel="icon" href="favicon.ico">
@@ -10,7 +12,7 @@
 
 <nav class="navbar navbar-expand-md navbar-dark bg-dark pt-1 pb-0" id="nav-area">
   <div class="container-fluid">
-    <a class="navbar-brand ps-3 pe-4" target="_self" href="../../" id="brand-name">NAS</a>
+    <a class="navbar-brand ps-3 pe-4" target="_self" href="../../static/" id="brand-name">NAS</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -34,7 +36,7 @@
   <div class="row justify-content-center mt-3 pt-2 pb-2 d-none" id="no-account">
     <div class="col-8 col-md-6 alert alert-warning pt-3 pb-3">
       <h4 class="pt-4 pb-3">已找到身份卡，但尚未启用</h4>
-      <p>身份智能卡尚未初始化，<a target="_blank" href="../../tee/">请跳转到账户管理界面</a> 对设备实施初始化。</p>
+      <p>身份智能卡尚未初始化，请跳转到 <a target="_blank" href="../../tee/">智能卡管理</a> 对设备实施初始化。</p>
     </div>
   </div>
 
@@ -78,11 +80,10 @@
 <script>
 const PAGE_INFO = {
   name: 'sample',
-  title: 'dapp样例',
+  title: 'sample',
   tee_required: false,
   menus: [
-// {name:'config',desc:'配置',url:'config.html'},
-// {name:'manual',desc:'手册',url:'book/index.html'},
+    {name:'config',desc:'配置',url:'config.html'},
   ],
 };
 
@@ -147,69 +148,15 @@ function url_fetch(url, callback, options, timeout) {
 
 //----
 
-var ECDH = require('create-ecdh')('secp256k1');
-var CryptoJS = require('crypto-js');
 var CreateHash = require('create-hash');
 var Buffer = require('safe-buffer').Buffer;
 
-const TRUE_BYTE = Buffer.from('01','hex');
-const FALSE_BYTE = Buffer.from('00','hex');
-
-function gen_ecdh_key(pubkey33, re_gen) {
-  // ECDH.setPrivateKey(big.numToBuf(bigN));  // for debuging
-  if (re_gen) ECDH.generateKeys();
-  
-  let pubKeyPoint = ECDH.getPublicKey();
-  let nonce_x = pubKeyPoint.slice(1,33);  // nonce_y = pubKeyPoint.slice(33,65)
-  let flag = pubKeyPoint[64] & 0x01;
-  let targ_x = ECDH.computeSecret(pubkey33);
-  return [flag, nonce_x, targ_x];
-}
-
-function wrapCryptoBuf(msg) {
-  if (msg.words instanceof Array)  // msg is instance of CryptoJS.lib.WordArray
-    return msg;
-  else if (msg.buffer instanceof ArrayBuffer)  // msg is instance of Buffer
-    return CryptoJS.lib.WordArray.create(msg);
-  else return CryptoJS.enc.Utf8.parse(msg);    // assume msg is utf-8 string
-}
-
-function AesCbcEncrypt(prv, iv, msg) {
-  prv = wrapCryptoBuf(prv);
-  iv = wrapCryptoBuf(iv);
-  msg = wrapCryptoBuf(msg);
-  
-  let encrypted = CryptoJS.AES.encrypt(msg, prv, {
-    iv: iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.ZeroPadding
-  });
-  // encrypted.toString() is base64-string, encrypted.ciphertext.toString() is hex-string
-  return encrypted.ciphertext;  // return CryptoJS.lib.WordArray
-}
-
-function encryptMsg(k_iv, msg) {
-  return AesCbcEncrypt(k_iv.slice(0,16),k_iv.slice(16,32),msg);
-}
-
-function adjustPin_(psw) {
-  if ((psw.length & 0x01) != 0) psw += 'f';
-  return Buffer.from(psw,'hex');
-}
-
-function genCipherForLogin(nonce, psw) {
-  psw = adjustPin_(psw);
-  
-  let r_plt = gen_ecdh_key(Buffer.from(last_plt_pubkey,'hex'),true); // [flag,nonce,k_iv]
-  let r_dev = gen_ecdh_key(Buffer.from(last_dev_pubkey,'hex'),false);
-  
-  // args: len1 + psw + len1 + nonce
-  nonce = Buffer.from(nonce,'hex');
-  args = Buffer.concat([Buffer.from([psw.length]),psw,Buffer.from([nonce.length]),nonce]);
-  
-  args = encryptMsg(CreateHash('sha256').update(r_plt[2]).digest(),args);
-  args = encryptMsg(CreateHash('sha256').update(r_dev[2]).digest(),args);
-  return (r_plt[0]==1?'03':'02') + r_plt[1].toString('hex') + args.toString();
+function generateRand(num) {
+  let ret = Buffer.alloc(num,0);
+  for (let i=0; i < num; i++) {
+    ret[i] = Math.floor(Math.random() * 256);  // 0 ~ 255
+  }
+  return ret;
 }
 
 //----
@@ -219,20 +166,23 @@ var all_frames = null;
 var all_nav_items = null;
 
 var tee_state  = 'ERR_REQUEST_FAIL';
+var user_first_visit = false;
 var has_login  = false;
 var ever_login = false;
 
+var last_local_site = '';
+
+var last_base36_name = '';
 var last_plt_pubkey  = '';
 var last_dev_pubkey  = '';
 var last_alt_pubkey  = '';
-var last_base36_name = '';
 
 var tokEnd = getCookie__('_tok_end_');
 if (!tokEnd || Math.floor((new Date()).valueOf()/1000) >= (parseInt(tokEnd)-300))  // 300 is 5 minutes
   tokEnd = ''; // access token is un-available
 
 function getState(retry_num, renew, callback) {
-  let url = '../../tee/state';
+  let url = '../../static/api/state';
   if (renew) url += '?renew=1';
   
   wait__(fetch(url),10000).then( res => {
@@ -250,7 +200,9 @@ function getState(retry_num, renew, callback) {
     return null;
   }).then( data => {
     if (data === null) return;
+    
     tee_state = data.state;
+    user_first_visit = data.first_visit;
     
     let desc;
     if (tee_state == 'NORMAL' || tee_state == 'NO_PASSWD')
@@ -263,7 +215,7 @@ function getState(retry_num, renew, callback) {
       desc = '等待初始化';
     else {
       if (tee_state == 'ERR_NO_CARD') {
-        if (PAGE_INFO.tee_required || !data.no_tee)
+        if (PAGE_INFO.tee_required)
           desc = '未发现设备';
         else desc = '';
       }
@@ -277,50 +229,33 @@ function getState(retry_num, renew, callback) {
 
 function updateTeeState(renew) {
   getState(2,renew, data => {   // retry 2 times more, total 3 times
-    // tee_state = 'ERR_NO_ACCOUNT';
-    if (tee_state == 'ERR_NO_CARD') {
-      last_base36_name = data.base36;
-      if (PAGE_INFO.tee_required || !data.no_tee)
-        $('#hint-area,#no-device').removeClass('d-none');
-      else {
-        last_plt_pubkey = '';
-        last_dev_pubkey = '';
-        last_alt_pubkey = '';
-        
-        if (tokEnd && data.has_login) {
-          all_nav_items.removeClass('disabled');
-          ever_login = true;
-          has_login = true;  // success auto login
-          whenSuccLogin();
-        }
-        else {
-          $('#login-psw2').toggleClass('d-none',!data.first_visit);
-          $('#desc-first-login').toggleClass('d-none',!data.first_visit);
-          $('#login-area').removeClass('d-none');
-          $('#login-psw').focus();
-        }
-      }
+    last_base36_name = data.base36 || '';
+    last_plt_pubkey = data.plt_pubkey || '';
+    last_dev_pubkey = data.dev_pubkey || '';
+    last_alt_pubkey = data.alt_pubkey || '';
+    
+    if (tee_state == 'ERR_NO_CARD' && PAGE_INFO.tee_required) {
+      $('#hint-area, #no-device').removeClass('d-none');
+      return;
     }
-    else if (tee_state == 'ERR_NO_ACCOUNT' || tee_state == 'ERR_WAIT_IMPORT') {
+    if (tee_state == 'ERR_NO_ACCOUNT' || tee_state == 'ERR_WAIT_IMPORT') {
       $('#hint-area, #no-account').removeClass('d-none');
+      return;
     }
-    else if (tee_state == 'NO_PASSWD') {
-      last_plt_pubkey = data.plt_pubkey;
-      last_dev_pubkey = data.dev_pubkey;
-      last_alt_pubkey = data.alt_pubkey;
-      last_base36_name = data.base36;
-      $('#hint-area, #wait-reset-psw').removeClass('d-none');
-    }
-    else if (tee_state != 'NORMAL') {  // ERR_UNKNOWN, ERR_REQUEST_FAIL
+    if (tee_state != 'ERR_NO_CARD' && tee_state != 'NORMAL') { // such as: ERR_UNKNOWN, ERR_REQUEST_FAIL, NO_PASSWD
       $('#hint-area, #req-abnormal').removeClass('d-none');
+      return;
     }
-    else {  // is 'NORMAL', next will try login
-      last_plt_pubkey = data.plt_pubkey;
-      last_dev_pubkey = data.dev_pubkey;
-      last_alt_pubkey = data.alt_pubkey;
-      last_base36_name = data.base36;
-      
-      if (tokEnd && data.has_login) {  // already login, data.has_login should be false if server restarted
+    
+    last_local_site = data.local_site || '';
+    if (data.first_visit) {
+      $('#login-psw2').removeClass('d-none');
+      $('#desc-first-login').removeClass('d-none');
+      $('#login-area').removeClass('d-none');
+      $('#login-psw').focus();
+    }
+    else {
+      if (tokEnd && data.has_login) {
         all_nav_items.removeClass('disabled');
         ever_login = true;
         has_login = true;  // success auto login
@@ -336,29 +271,41 @@ function updateTeeState(renew) {
   });
 }
 
-function _checkPswFormat(psw) {
-  return psw.match(/^\d{8}$/)
-}
-
 function temporaryDisable(node) {
   let curr = $(node);
   curr.prop('disabled',true);
   setTimeout(() => curr.prop('disabled',false),1500);
 }
 
+var opCode = '';
+
 function _loginAccount(targ) {
   let psw = $('#login-psw').val().trim();
   if (!psw) return alert('密码不能为空');
-  if (!_checkPswFormat(psw))
-    return alert('密码格式不正确');
+  if (Buffer.from(psw).length <= 3) return alert('密码太短');
+  if (!$('#login-psw2').hasClass('d-none')) {
+    let psw2 = $('#login-psw2').val().trim();
+    if (psw != psw2) return alert('两次输入密码不一致');
+  }
   
   if (targ) temporaryDisable(targ);
   
-  url_fetch('../../tee/query_login', data => {
+  if (user_first_visit) {
+    if (!last_local_site) return alert('无法定位局域网内设备'); // http://nbc-nas.local:8002
+    
+    if (!opCode) opCode = generateRand(8).toString('hex');
+    let url = 'http://' + last_local_site + '/static/api/local_denote?code=' + opCode;
+    window.open(url,'_blank');  // can not pass opCode by <iframe> or fetch(), because http embeded in https
+  }
+  
+  url_fetch('../../static/api/query_login', data => {
     if (data === null || data.result != 'success') return alert('请求失败');
     
-    let cipher = genCipherForLogin(data.nonce,psw);
-    url_fetch('../../tee/login', data2 => {
+    psw = CreateHash('sha256').update(Buffer.from(psw)).digest().toString('hex');
+    if (!(user_first_visit && data.first_visit))
+      psw = CreateHash('sha256').update(Buffer.from('PSW:'+data.nonce+':'+psw)).digest().toString('hex');
+    
+    url_fetch('../../static/api/login'+(user_first_visit?'?code='+opCode:''), data2 => {
       if (data2 === null) return alert('请求失败');
       
       if (data2.result == 'success') {  // pass _tee_tok_=xxx, by server accessing cookie
@@ -371,48 +318,17 @@ function _loginAccount(targ) {
         whenSuccLogin();
       }
       else if (data2.result == 'failed') {
-        if (data2.reason == 'TEE_ERROR' && data2.error.code == '6982') // SECURITY_NOT_SATISFIED
-          alert('登录验证失败');
-        else alert('操作失败：' + data2.reason);
+        if (data2.reason == 'INVALID_PASSWORD')
+          alert('密码错误');
+        else alert('登录失败：' + data2.reason);
       }
-      // else, ignore
-    }, {method:'POST',body:JSON.stringify({cipher:cipher})} );
+      else alert('登录失败');
+    }, {method:'POST',body:JSON.stringify({password:psw})} );
   });
 }
 
-function _loginAccount2(targ) {   // testing user login
-  let psw = $('#login-psw').val().trim();
-  if (!psw) return alert('密码不能为空');
-  if (!$('#login-psw2').hasClass('d-none')) {
-    let psw2 = $('#login-psw2').val().trim();
-    if (psw != psw2) return alert('两次输入密码不一致');
-  }
-  
-  if (targ) temporaryDisable(targ);
-  
-  psw = CreateHash('sha256').update(Buffer.from('PSW:'+psw)).digest().toString('hex');
-  url_fetch('../../tee/login', data2 => {
-    if (data2 === null) return alert('请求失败');
-    
-    if (data2.result == 'success') {  // pass _tee_tok_=xxx, by server accessing cookie
-      $('#login-psw').val('');
-      $('#login-psw2').val('');
-      $('#login-area').addClass('d-none');
-      
-      console.log('success login');
-      ever_login = true;
-      has_login = true;
-      whenSuccLogin();
-    }
-    else if (data2.result == 'failed') {
-      alert('操作失败：' + data2.reason);
-    }
-    // else, ignore
-  }, {method:'POST',body:JSON.stringify({password:psw})} );
-}
-
 function logoutAccount() {
-  url_fetch('../../tee/logout', data => {
+  url_fetch('../../static/api/logout', data => {
     if (data === null || data.result != 'success')
       return alert('请求失败');
     
@@ -438,19 +354,12 @@ $( () => {
   all_nav_items = $('#navbarContent .nav-link');
   
   $('#login-psw').on('keypress', ev => {
-    if (ev.keyCode == 13) {
-      if (!last_dev_pubkey && tee_state == 'ERR_NO_CARD')
-        _loginAccount2(null);
-      else if (last_dev_pubkey)
-        _loginAccount(null);
-    }
+    if (ev.keyCode == 13)
+      _loginAccount(null);
   });
   
   $('#btn-main-login').on('click', ev => {
-    if (!last_dev_pubkey && tee_state == 'ERR_NO_CARD')
-      _loginAccount2(ev.target);
-    else if (last_dev_pubkey)
-      _loginAccount(ev.target);
+    _loginAccount(ev.target);
   });
   
   //----

@@ -15,11 +15,8 @@ def config_http(static_dir=None, static_url=None):
   global _app, _flask_site
   if _app: return _app
   
-  import os
   from flask import Flask
-  folder = static_dir or os.path.abspath('./static')
-  url = static_url or '/static'
-  _app = Flask(__name__,static_folder=folder,static_url_path=url)
+  _app = Flask(__name__,static_folder=static_dir,static_url_path=static_url)
   _flask_site = WSGIResource(reactor,reactor.getThreadPool(),_app)
   
   return _app
@@ -29,8 +26,8 @@ def check_connections(relay_serv, HCB):
   if len(HCB.conns) < HCB.conn_num:
     reactor.connectTCP(relay_serv[0],relay_serv[1],MyHttpFactory(_flask_site,HCB),timeout=30)
   
-  # step 2: set checking later, run every 90 seconds
-  reactor.callLater(90,check_connections,relay_serv,HCB)
+  # step 2: set checking later, run every 50 seconds
+  reactor.callLater(50,check_connections,relay_serv,HCB)
 
 def start_web_service(relay_serv, lcns_info, conn_nonce=None, app_name=None):
   if lcns_info:
@@ -47,11 +44,11 @@ def start_web_service(relay_serv, lcns_info, conn_nonce=None, app_name=None):
     assert isinstance(conn_nonce,bytes) and len(conn_nonce) >= 5
     assert isinstance(app_name,str) and app_name
     
-    cred_1 = ('name:%s,period:1,num:1' % app_name).encode('utf-8')  # careful! num fixed to 1
+    cred_1 = ('name:%s,period:1,num:2' % app_name).encode('utf-8')  # careful! num fixed to 2
     cred_sig = hashlib.sha256(hashlib.sha256(cred_1).digest()+b':'+conn_nonce).digest()[:4]
-    HCB = HttpCtrlBlock('',1,b'BUILTIN',cred_1,hexlify(conn_nonce),hexlify(cred_sig))
+    HCB = HttpCtrlBlock('',2,b'BUILTIN',cred_1,hexlify(conn_nonce),hexlify(cred_sig))
   
   reactor.connectTCP(relay_serv[0],relay_serv[1],MyHttpFactory(_flask_site,HCB),timeout=30)
-  reactor.callLater(40,check_connections,relay_serv,HCB)
+  reactor.callLater(20,check_connections,relay_serv,HCB)
   
   return HCB
