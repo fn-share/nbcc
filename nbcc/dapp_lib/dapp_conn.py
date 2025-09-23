@@ -161,7 +161,10 @@ class MyHttpChannel(http.HTTPChannel):
     super().allContentReceived()
   
   def writeHeaders(self, version, code, reason, headers):
-    headers.insert(0,(b'X-Nbc-Sn',b'%i' % self.transport._curr_sequence))
+    sn = b'%i' % self.transport._curr_sequence
+    if hasattr(headers,'addRawHeader'):      # new version is dict like
+      headers.addRawHeader(b'X-Nbc-Sn',sn)
+    else: headers.insert(0,(b'X-Nbc-Sn',sn)) # old version is list like
     super().writeHeaders(version,code,reason,headers)
   
   def requestDone(self, request):
