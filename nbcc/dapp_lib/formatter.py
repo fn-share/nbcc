@@ -360,7 +360,8 @@ class _EasyDict(dict):
   def __getattr__(self, attr):
     if attr[0] == '_':  # easy access grammar, dict._attr is same to dict.attr._
       v = self[attr[1:]]
-      return v._ if v.__class__._type_ in _base_types else v
+      tp = v.__class__._type_
+      return v._ if tp in _base_types or tp[-1] == ']' else v
     else: return self[attr]
   
   def __setattr__(self, attr, value):
