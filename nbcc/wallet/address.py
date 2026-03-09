@@ -273,7 +273,7 @@ class Address(object):
       traceback.print_exc()
     return b''
   
-  # Make signature by doulbe hash256 on `data` and result in DER format
+  # Make signature by doulbe hash256() on `data` and with DER format
   # Args:
   #   data (bytes): the string to be sign
   # Returns:
@@ -292,7 +292,8 @@ class Address(object):
   def verify(self, data, signature):
     return self.verify_ex(data,signature) != b''
   
-  # Make signature by doulbe hash256 on `data` and without DER format in result
+  # Make signature by doulbe hash256() on `data` and with no DER
+  #   format
   # Args:
   #   data (bytes): the string to be sign
   # Returns:
