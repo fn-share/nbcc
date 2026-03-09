@@ -357,7 +357,8 @@ class Address(object):
   #   return Address instance when successful
   @staticmethod
   def load_from_cfg(account, passphrase=''):
-    pubKey = account['pubkey']; prvKey = account['prvkey']
+    pubKey = account.get('pubkey',None)
+    prvKey = account.get('prvkey',None)
     if prvKey:
       prvKey = unhexlify(prvKey)
       if account.get('encrypted'):
@@ -368,9 +369,11 @@ class Address(object):
         if nowLen < 2 + orgLen or nowLen > orgLen + 17:   # 17 is 2 + padding(15)
           raise ValueError('out of range')
         prvKey = prvKey[2:2+orgLen]  # first 2 bytes is original length
+        pubKey = None
       except:
         raise ValueError('invalid private key')
     elif pubKey:
+      # assert prvKey is None
       pubKey = unhexlify(pubKey)
     
     ver = unhexlify(account.get('ver','00'))
