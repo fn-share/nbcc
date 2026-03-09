@@ -144,13 +144,15 @@ class Address(object):
     else:
       raise ValueError('no address parameters')
     
-    # public address, according to uncompressed
-    self._address = util.key.publickey_to_address(self._pub_key,self._ver)
+    # public address, according to uncompressed format
+    self._address = None
   
   # Get base58 encoded account address
   # Returns:
   #   human readable address string that encoded by base58
   def address(self):
+    if self._address is None:
+      self._address = util.key.publickey_to_address(self._pub_key,self._ver).decode('utf-8')
     return self._address
   
   # Get public key hash by ripemd160(sha256d(public_key_33_bytes))
