@@ -57,7 +57,7 @@ class HDWallet(object):
   _parentfp = None
   _childnum = None
   
-  def __init__(self, key, chain, vcn=None, testnet=False, depth=None, parentfp=None, childnum=None):
+  def __init__(self, key, chain, testnet=False, depth=None, parentfp=None, childnum=None):
     if type(key) == ellipticcurve.Point:        # public key is a point
       self._pubkey = key  
     elif type(key) == int or type(key) == long: # private key an integer
@@ -69,10 +69,6 @@ class HDWallet(object):
     assert(len(chain) == 32)
     self._chain = chain  # chaincode
     self._testnet = testnet
-    
-    if vcn is None:
-      self.vcn = vcn     # for bitcoin style
-    else: self.vcn = int(vcn) & 0xffff  # for NBC parallel chain
     
     if depth == None:    # master wallet
       depth = 0
@@ -89,9 +85,9 @@ class HDWallet(object):
     self._verify_key = None
   
   @staticmethod
-  def from_pubkey(comp_pub, chain_code, vcn=None):
+  def from_pubkey(comp_pub, chain_code):
     key = point_decompress(curve.curve,comp_pub)  # from compressed public key to point
-    return HDWallet(key,chain_code,vcn)
+    return HDWallet(key,chain_code)
   
   def child(self, i):
     i = i & 0xffffffff
@@ -132,7 +128,7 @@ class HDWallet(object):
       
       childKey = childPubkey
     
-    return self.__class__( childKey, childChain, vcn=self.vcn, testnet=self._testnet,
+    return self.__class__( childKey, childChain, testnet=self._testnet,
       depth=self._depth + 1,
       parentfp=self.fingerprint(),
       childnum=i )
@@ -197,7 +193,7 @@ class HDWallet(object):
     if not isinstance(ver,bytes):   # ver is bytes
       assert isinstance(ver,str)
       ver = ver.encode('utf-8')
-    addr = util.key.publickey_to_address(self.publicKey(),ver,self.vcn)
+    addr = util.key.publickey_to_address(self.publicKey(),ver)
     return addr.decode('utf-8')
   
   def publicKey(self):
@@ -264,7 +260,7 @@ class HDWallet(object):
     return self.verify_ex(data,signature,no_der=True)
   
   @staticmethod
-  def from_extended_key(extended_key, vcn=None):
+  def from_extended_key(extended_key):
     decoded = base58.b58decode(extended_key)
     assert(decoded and len(decoded) == 82)   # 82 == 78+4
     ekdata = decoded[:78]
@@ -291,11 +287,11 @@ class HDWallet(object):
     else:
       raise Exception('unknown version')
     
-    return HDWallet( key, chaincode, vcn=vcn, testnet=testnet, depth=depth,
+    return HDWallet( key, chaincode, testnet=testnet, depth=depth,
       childnum=childnum, parentfp=parentfp )
   
   @staticmethod
-  def from_master_seed(master_seed, vcn=None, testnet=False):
+  def from_master_seed(master_seed, testnet=False):
     if not isinstance(master_seed,bytes):
       master_seed = master_seed.encode('utf-8')
     
@@ -303,13 +299,12 @@ class HDWallet(object):
     master_key = string_to_number(deriv[:32]) % curve.order
     if master_key == 0: raise ValueError('zeror key, try again')
     master_chain = deriv[32:]
-    return HDWallet(master_key, master_chain, vcn=vcn, testnet=testnet)
+    return HDWallet(master_key, master_chain, testnet=testnet)
   
   def dump_to_cfg(self, passphrase='', cfg=None):
     cfg = cfg or {}
     account = { 'time':int(time.time()), 'encrypted':False, 'type':'HD',
       'chain': self._chain.hex(),
-      'vcn': self.vcn,   # can be None
       'testnet': self._testnet,
       'depth': self._depth,
       'parentfp': self.parentfp().hex(),
@@ -363,9 +358,8 @@ class HDWallet(object):
     if parentfp: parentfp = unhexlify(parentfp)
     
     return HDWallet( prvKey or pubKey, chaincode,
-      vcn=account.get('vcn',None), testnet=account.get('testnet',False),
-      depth=account.get('depth',None), childnum=account.get('childnum',None), 
-      parentfp=parentfp )
+      testnet=account.get('testnet',False), depth=account.get('depth',None),
+      childnum=account.get('childnum',None), parentfp=parentfp )
   
   def __str__(self):
     privateKey = 'None'

@@ -71,7 +71,7 @@ def _sigdecode(s, order):
   return (int(hexlify(s[:32]),16),int(hexlify(s[32:]),16))
 
 class Address(object):
-  def __init__(self, pub_key=None, priv_key=None, ver=b'\x00', vcn=None):
+  def __init__(self, pub_key=None, priv_key=None, ver=b'\x00'):
     self._compressed = False
     self._priv_key = priv_key
     self._ver = ver  # in BTC, ver can be b'\x00'~b'\xff', b'\x6f' for testnet
@@ -116,18 +116,14 @@ class Address(object):
     else:
       raise ValueError('no address parameters')
     
-    if vcn is None:
-      self._vcn = vcn
-    else: self._vcn = int(vcn) & 0xff
-    
     # public address, according to uncompressed
-    self._address = util.key.publickey_to_address(self._pub_key,self._ver,self._vcn)
+    self._address = util.key.publickey_to_address(self._pub_key,self._ver)
   
   def address(self):
     return self._address
   
   def publicHash(self):   # according to compressed
-    return util.key.publickey_to_hash(self.publicKey(),self._vcn)
+    return util.key.publickey_to_hash(self.publicKey())
   
   def publicKey(self):    # according to compressed
     if self._comp_pubkey is None:
@@ -143,30 +139,30 @@ class Address(object):
     return hash160(self.publicKey())[:4]
   
   @staticmethod
-  def generate(vcn=None, ver=b'\x00', compressed=True): # suggest only using compressed address
+  def generate(ver=b'\x00', compressed=True):   # suggest only using compressed address
     'Generate a new random address.'
-    secexp = randrange(curve.order)              # return: 1 <= k < order
-    key = number_to_string(secexp,curve.order)   # get 32 bytes number
+    secexp = randrange(curve.order)             # return: 1 <= k < order
+    key = number_to_string(secexp,curve.order)  # get 32 bytes number
     if compressed:
       key = key + b'\x01'
-    return Address(priv_key=util.key.privkey_to_wif(key),ver=ver,vcn=vcn)
+    return Address(priv_key=util.key.privkey_to_wif(key),ver=ver)
   
   def decompress(self):  # convert to decompressed
     if not self._compressed: return self
     
     if self._priv_key:
-      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()),ver=self._ver,vcn=self._vcn)
+      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()),ver=self._ver)
     if self._pub_key:
-      return Address(pub_key=util.key.decompress_public_key(self._pub_key),ver=self._ver,vcn=self._vcn)
+      return Address(pub_key=util.key.decompress_public_key(self._pub_key),ver=self._ver)
     raise ValueError('address cannot be decompressed')
   
   def compress(self):    # convert to compress
     if self._compressed: return self
     
     if self._priv_key:
-      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()+b'\x01'),ver=self._ver,vcn=self._vcn)
+      return Address(priv_key=util.key.privkey_to_wif(self._priv_key_()+b'\x01'),ver=self._ver)
     if self._pub_key:
-      return Address(pub_key=self.publicKey(),ver=self._ver,vcn=self._vcn)
+      return Address(pub_key=self.publicKey(),ver=self._ver)
     raise ValueError('address cannot be compressed')
   
   def _get_priv(self):
@@ -222,10 +218,7 @@ class Address(object):
   def dump_to_cfg(self, passphrase='', cfg=None):
     cfg = cfg or {}
     account = { 'time':int(time.time()), 'encrypted':False, 'type':'default',
-      'vcn': self._vcn,  # can be None
-      'ver': self._ver.hex(),
-      'prvkey': None, 'pubkey': self.publicKey().hex(),
-    }
+      'ver': self._ver.hex(), 'prvkey': None, 'pubkey': self.publicKey().hex() }
     
     privKey = self._priv_key
     if privKey:
@@ -265,6 +258,5 @@ class Address(object):
     elif pubKey:
       pubKey = unhexlify(pubKey)
     
-    vcn = account.get('vcn',None)
     ver = unhexlify(account.get('ver','00'))
-    return Address(pub_key=pubKey,priv_key=prvKey,ver=ver,vcn=vcn)
+    return Address(pub_key=pubKey,priv_key=prvKey,ver=ver)
