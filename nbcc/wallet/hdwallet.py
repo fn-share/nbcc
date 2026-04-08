@@ -135,11 +135,14 @@ class HDWallet(object):
   
   def fromPath(self, path):
     deriveKey = self
-    if str(path)[:2] != 'm/':
+    if path[:2] != 'm/':
       raise ValueError("Bad path, please insert like this type of path \"m/0'/0\"!")
     
-    for idx in path.lstrip('m/').split('/'):
-      if "'" in idx:
+    path = path[2:]
+    if not path: return deriveKey
+    
+    for idx in path.split('/'):
+      if idx[-1:] == "'":
         deriveKey = deriveKey.child(int(idx[:-1]) + 0x80000000)
       else: deriveKey = deriveKey.child(int(idx))
     
