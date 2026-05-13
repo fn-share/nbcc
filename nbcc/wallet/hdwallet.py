@@ -46,6 +46,14 @@ def _sigencode(r, s, order):
 def _sigdecode(s, order):
   return (int(hexlify(s[:32]),16),int(hexlify(s[32:]),16))
 
+_half_order = curve.order >> 1
+
+def normalize_der(der_sig):
+  r,s = sigdecode_der(der_sig,curve.order)
+  if s > _half_order:
+    return sigencode_der(r,curve.order-s,curve.order)
+  else: return der_sig
+
 class HDWallet(object):
   _chain  = None   # ByteSeq
   _pubkey = None   # ellipticcurve.Point

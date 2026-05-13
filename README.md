@@ -11,6 +11,12 @@ cd nbcc
 python3 setup.py install
 ```
 
+or,
+
+``` bash
+pip3 install git+https://github.com/fn-share/nbcc.git
+```
+
 &nbsp;
 
 ### Command Line
