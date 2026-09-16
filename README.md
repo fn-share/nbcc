@@ -39,3 +39,10 @@ Commands:
 ```
 
 &nbsp;
+
+### redistribution
+
+Just copy nbcc folder of source code to your project.
+
+&nbsp;
+
