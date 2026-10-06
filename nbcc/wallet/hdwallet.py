@@ -218,8 +218,8 @@ class HDWallet(object):
   def depth(self):
     return self._depth
   
-  def fingerprint(self):
-    return hash160(self.publicKey())[:4]
+  def fingerprint(self, size=4):
+    return hash160(self.publicKey())[:size]
   
   def parentfp(self):
     if self._parentfp and self._depth:

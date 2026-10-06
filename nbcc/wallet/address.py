@@ -179,9 +179,9 @@ class Address(object):
   
   # Get fingerprint of public key
   # Returns:
-  #   4 bytes fingerprint, by ripemd160(sha256(public_key33))[:4]
-  def fingerprint(self):
-    return hash160(self.publicKey())[:4]
+  #   N bytes fingerprint, by ripemd160(sha256(public_key33))[:N]
+  def fingerprint(self, size=4):
+    return hash160(self.publicKey())[:size]
   
   # Generate new random Address account
   # Args:
